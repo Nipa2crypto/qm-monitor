@@ -1,4 +1,4 @@
-require('dotenv').config();
+try { require('dotenv').config(); } catch (_err) {}
 const express = require('express');
 const path = require('path');
 const bcrypt = require('bcryptjs');
