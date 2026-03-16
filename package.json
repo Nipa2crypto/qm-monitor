@@ -1,6 +1,6 @@
 {
   "name": "qm-monitor",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "QM Monitor - Reklamations- und Prozessscreening",
   "main": "server.js",
   "type": "commonjs",
@@ -9,7 +9,7 @@
     "dev": "node server.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": "20.x"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
