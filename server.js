@@ -9,8 +9,8 @@ const { Pool } = require('pg');
 const app = express();
 const PORT = process.env.PORT || 10000;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL ? String(process.env.ADMIN_EMAIL).trim().toLowerCase() : '';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ? String(process.env.ADMIN_PASSWORD) : '';
 const APP_NAME = process.env.APP_NAME || 'QM Monitor';
 
 if (!process.env.DATABASE_URL) {
@@ -84,20 +84,26 @@ async function initDb() {
   await pool.query(schema);
 
   if (ADMIN_EMAIL && ADMIN_PASSWORD) {
-    const existing = await pool.query('SELECT id FROM users WHERE email = $1', [ADMIN_EMAIL.toLowerCase()]);
-    if (existing.rowCount === 0) {
-      const hash = await bcrypt.hash(ADMIN_PASSWORD, 12);
-      const result = await pool.query(
-        `INSERT INTO users (name, email, password_hash, role)
-         VALUES ($1, $2, $3, 'admin') RETURNING id`,
-        ['Admin', ADMIN_EMAIL.toLowerCase(), hash]
-      );
-      await pool.query(
-        `INSERT INTO notification_settings (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING`,
-        [result.rows[0].id]
-      );
-      console.log(`Admin-User angelegt: ${ADMIN_EMAIL}`);
-    }
+    console.log(`[init] Admin-Seeding gestartet für ${ADMIN_EMAIL}`);
+    const hash = await bcrypt.hash(ADMIN_PASSWORD, 12);
+    const result = await pool.query(
+      `INSERT INTO users (name, email, password_hash, role)
+       VALUES ($1, $2, $3, 'admin')
+       ON CONFLICT (email) DO UPDATE SET
+         name = EXCLUDED.name,
+         password_hash = EXCLUDED.password_hash,
+         role = 'admin'
+       RETURNING id, email`,
+      ['Admin', ADMIN_EMAIL, hash]
+    );
+
+    await pool.query(
+      `INSERT INTO notification_settings (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING`,
+      [result.rows[0].id]
+    );
+    console.log(`[init] Admin-User aktiv: ${result.rows[0].email} (id=${result.rows[0].id})`);
+  } else {
+    console.warn('[init] ADMIN_EMAIL oder ADMIN_PASSWORD fehlt - kein Admin-Seeding ausgeführt.');
   }
 }
 
@@ -138,16 +144,26 @@ app.post('/api/login', async (req, res) => {
   const { email, password } = req.body || {};
   if (!email || !password) return res.status(400).json({ error: 'E-Mail und Passwort erforderlich.' });
 
+  const normalizedEmail = String(email).trim().toLowerCase();
+  const normalizedPassword = String(password);
+
   const result = await pool.query(
     'SELECT id, name, email, password_hash, role FROM users WHERE email = $1',
-    [String(email).toLowerCase()]
+    [normalizedEmail]
   );
 
-  if (result.rowCount === 0) return res.status(401).json({ error: 'Login fehlgeschlagen.' });
+  if (result.rowCount === 0) {
+    console.warn(`[login] Benutzer nicht gefunden: ${normalizedEmail}`);
+    return res.status(401).json({ error: 'Login fehlgeschlagen.' });
+  }
   const user = result.rows[0];
-  const ok = await bcrypt.compare(password, user.password_hash);
-  if (!ok) return res.status(401).json({ error: 'Login fehlgeschlagen.' });
+  const ok = await bcrypt.compare(normalizedPassword, user.password_hash);
+  if (!ok) {
+    console.warn(`[login] Passwort falsch für: ${normalizedEmail}`);
+    return res.status(401).json({ error: 'Login fehlgeschlagen.' });
+  }
 
+  console.log(`[login] Erfolgreich: ${normalizedEmail}`);
   const token = signToken(user);
   res.cookie('qm_token', token, {
     httpOnly: true,
@@ -156,6 +172,16 @@ app.post('/api/login', async (req, res) => {
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
   res.json({ id: user.id, name: user.name, email: user.email, role: user.role });
+});
+
+
+app.get('/api/debug/admin-status', async (_req, res) => {
+  const users = await pool.query("SELECT id, email, role, created_at FROM users ORDER BY id ASC");
+  res.json({
+    adminEmailEnv: ADMIN_EMAIL || null,
+    hasAdminPasswordEnv: Boolean(ADMIN_PASSWORD),
+    users: users.rows,
+  });
 });
 
 app.post('/api/logout', (_req, res) => {
