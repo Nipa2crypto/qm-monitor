@@ -1,0 +1,9 @@
+{
+  "name": "QM Monitor",
+  "short_name": "QM Monitor",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#2563eb",
+  "icons": []
+}

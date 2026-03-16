@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QM Monitor</title>
+  <meta name="theme-color" content="#2563eb">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <section id="authView" class="auth-wrap">
+    <div class="auth-card">
+      <div class="logo">QM Monitor</div>
+      <p class="subtle">Reklamations- und Prozessscreening</p>
+      <form id="loginForm" class="form-grid">
+        <div>
+          <label for="loginEmail">E-Mail</label>
+          <input id="loginEmail" type="email" required placeholder="admin@example.com">
+        </div>
+        <div>
+          <label for="loginPassword">Passwort</label>
+          <input id="loginPassword" type="password" required placeholder="••••••••">
+        </div>
+        <div class="notice" id="loginError"></div>
+        <button class="btn-primary" type="submit">Einloggen</button>
+      </form>
+    </div>
+  </section>
+
+  <section id="appView" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="logo" style="font-size:24px">QM Monitor</div>
+      <p class="subtle small">V1 Render Ready</p>
+      <div class="panel" style="padding:14px; margin:16px 0;">
+        <div id="meName" style="font-weight:700"></div>
+        <div id="meRole" class="subtle small"></div>
+      </div>
+      <div class="nav">
+        <button class="nav-btn active" data-view="dashboard">Dashboard</button>
+        <button class="nav-btn" data-view="cases">Fälle</button>
+        <button class="nav-btn" data-view="newCase">Neuer Fall</button>
+        <button class="nav-btn" data-view="settings">Einstellungen</button>
+        <button id="logoutBtn">Logout</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div id="dashboardView" class="view">
+        <div class="topbar">
+          <div>
+            <h1 style="margin:0">Dashboard</h1>
+            <div class="subtle">Schnelle Übersicht über offene Fälle</div>
+          </div>
+          <button class="btn-primary" data-nav="newCase">+ Neuer Fall</button>
+        </div>
+
+        <div class="kpi-grid">
+          <div class="kpi"><div class="subtle">Offen</div><div class="num" id="kpiOpen">0</div></div>
+          <div class="kpi"><div class="subtle">Rot</div><div class="num" id="kpiRed">0</div></div>
+          <div class="kpi"><div class="subtle">Mir zugewiesen</div><div class="num" id="kpiMine">0</div></div>
+          <div class="kpi"><div class="subtle">Überfällig</div><div class="num" id="kpiOverdue">0</div></div>
+        </div>
+
+        <div class="grid-2">
+          <section class="panel">
+            <h2 style="margin-top:0">Neueste Fälle</h2>
+            <div id="dashboardCases" class="timeline"></div>
+          </section>
+          <section class="panel">
+            <h2 style="margin-top:0">Meine Hinweise</h2>
+            <div id="dashboardHints" class="timeline"></div>
+          </section>
+        </div>
+      </div>
+
+      <div id="casesView" class="view hidden">
+        <div class="topbar">
+          <div>
+            <h1 style="margin:0">Fälle</h1>
+            <div class="subtle">Filtern, öffnen und bearbeiten</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="filters">
+            <div>
+              <label>Status</label>
+              <select id="filterStatus">
+                <option value="all">Alle</option>
+                <option value="neu">Neu</option>
+                <option value="im screening">Im Screening</option>
+                <option value="in bearbeitung">In Bearbeitung</option>
+                <option value="warten auf rueckmeldung">Warten auf Rückmeldung</option>
+                <option value="abgeschlossen">Abgeschlossen</option>
+              </select>
+            </div>
+            <div>
+              <label>Priorität</label>
+              <select id="filterPriority">
+                <option value="all">Alle</option>
+                <option value="rot">Rot</option>
+                <option value="gelb">Gelb</option>
+                <option value="gruen">Grün</option>
+              </select>
+            </div>
+            <div>
+              <label>Typ</label>
+              <select id="filterType">
+                <option value="all">Alle</option>
+                <option value="customer_complaint">Kundenreklamation</option>
+                <option value="internal_process">Interner Prozessfehler</option>
+              </select>
+            </div>
+            <div>
+              <label>&nbsp;</label>
+              <button id="filterMineBtn" class="btn-secondary">Nur meine Fälle</button>
+            </div>
+          </div>
+        </div>
+        <div class="panel table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Titel</th>
+                <th>Typ</th>
+                <th>Priorität</th>
+                <th>Status</th>
+                <th>Zuständig</th>
+                <th>Fällig</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="casesTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="newCaseView" class="view hidden">
+        <div class="topbar">
+          <div>
+            <h1 style="margin:0">Neuer Fall</h1>
+            <div class="subtle">Kundenreklamation oder interner Prozessfehler</div>
+          </div>
+        </div>
+        <form id="newCaseForm" class="panel form-grid">
+          <div class="row">
+            <div>
+              <label>Falltyp</label>
+              <select name="case_type" required>
+                <option value="customer_complaint">Kundenreklamation</option>
+                <option value="internal_process">Interner Prozessfehler</option>
+              </select>
+            </div>
+            <div>
+              <label>Priorität</label>
+              <select name="priority">
+                <option value="gelb">Gelb</option>
+                <option value="rot">Rot</option>
+                <option value="gruen">Grün</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label>Titel</label>
+            <input name="title" required placeholder="z. B. Reklamation nach Bremsenservice">
+          </div>
+          <div>
+            <label>Beschreibung</label>
+            <textarea name="description" required placeholder="Was ist passiert?"></textarea>
+          </div>
+          <div class="row">
+            <div>
+              <label>Bereich</label>
+              <select name="source_area">
+                <option value="">Bitte wählen</option>
+                <option>Service</option>
+                <option>Werkstatt</option>
+                <option>Diagnose</option>
+                <option>ETL</option>
+                <option>Aufbereitung</option>
+                <option>Carrosserie/Lack</option>
+              </select>
+            </div>
+            <div>
+              <label>Zuständig</label>
+              <select name="assigned_user_id" id="assignedUserSelect">
+                <option value="">Noch offen</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label>Kunde</label>
+              <input name="customer_name" placeholder="nur bei Kundenreklamation relevant">
+            </div>
+            <div>
+              <label>Fahrzeug</label>
+              <input name="vehicle" placeholder="Kennzeichen / VIN / Modell">
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label>Auftrag / Referenz</label>
+              <input name="order_ref" placeholder="Auftragsnummer / AIR / Rechnung">
+            </div>
+            <div>
+              <label>Fällig bis</label>
+              <input name="due_date" type="date">
+            </div>
+          </div>
+          <div class="notice" id="newCaseError"></div>
+          <div>
+            <button class="btn-primary" type="submit">Fall speichern</button>
+          </div>
+        </form>
+      </div>
+
+      <div id="settingsView" class="view hidden">
+        <div class="topbar">
+          <div>
+            <h1 style="margin:0">Einstellungen</h1>
+            <div class="subtle">Persönliche Benachrichtigungen</div>
+          </div>
+        </div>
+        <form id="settingsForm" class="panel form-grid">
+          <label><input type="checkbox" name="notify_enabled" style="width:auto"> Benachrichtigungen aktiv</label>
+          <label><input type="checkbox" name="notify_only_assigned" style="width:auto"> Nur eigene / zugewiesene Fälle</label>
+          <label><input type="checkbox" name="notify_only_red" style="width:auto"> Nur Rot-Fälle</label>
+          <label><input type="checkbox" name="notify_daily_digest" style="width:auto"> Tägliche Zusammenfassung statt sofort</label>
+          <div class="notice" id="settingsNotice"></div>
+          <div><button class="btn-primary" type="submit">Speichern</button></div>
+        </form>
+
+        <section class="panel hidden" id="adminUserPanel">
+          <h2 style="margin-top:0">Benutzer anlegen</h2>
+          <form id="createUserForm" class="form-grid">
+            <div class="row">
+              <div><label>Name</label><input name="name" required></div>
+              <div><label>E-Mail</label><input name="email" type="email" required></div>
+            </div>
+            <div class="row">
+              <div><label>Passwort</label><input name="password" type="password" required></div>
+              <div>
+                <label>Rolle</label>
+                <select name="role">
+                  <option value="user">User</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+            </div>
+            <div class="notice" id="userCreateNotice"></div>
+            <div><button class="btn-primary" type="submit">Benutzer anlegen</button></div>
+          </form>
+        </section>
+      </div>
+
+      <div id="caseDetailView" class="view hidden">
+        <div class="topbar">
+          <div>
+            <h1 style="margin:0" id="detailTitle">Fall</h1>
+            <div class="subtle" id="detailMeta"></div>
+          </div>
+          <button class="btn-secondary" data-nav="cases">Zurück zur Liste</button>
+        </div>
+        <div class="grid-2">
+          <section class="panel">
+            <h2 style="margin-top:0">Fall bearbeiten</h2>
+            <form id="detailEditForm" class="form-grid">
+              <div class="row">
+                <div>
+                  <label>Status</label>
+                  <select name="status">
+                    <option value="neu">Neu</option>
+                    <option value="im screening">Im Screening</option>
+                    <option value="in bearbeitung">In Bearbeitung</option>
+                    <option value="warten auf rueckmeldung">Warten auf Rückmeldung</option>
+                    <option value="abgeschlossen">Abgeschlossen</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Priorität</label>
+                  <select name="priority">
+                    <option value="rot">Rot</option>
+                    <option value="gelb">Gelb</option>
+                    <option value="gruen">Grün</option>
+                  </select>
+                </div>
+              </div>
+              <div class="row">
+                <div>
+                  <label>Zuständig</label>
+                  <select name="assigned_user_id" id="detailAssignedUser"></select>
+                </div>
+                <div>
+                  <label>Fällig bis</label>
+                  <input name="due_date" type="date">
+                </div>
+              </div>
+              <div>
+                <label>Bereich</label>
+                <select name="source_area">
+                  <option value="">Bitte wählen</option>
+                  <option>Service</option>
+                  <option>Werkstatt</option>
+                  <option>Diagnose</option>
+                  <option>ETL</option>
+                  <option>Aufbereitung</option>
+                  <option>Carrosserie/Lack</option>
+                </select>
+              </div>
+              <div class="notice" id="detailEditNotice"></div>
+              <div><button class="btn-primary" type="submit">Änderungen speichern</button></div>
+            </form>
+            <hr>
+            <h2>Neue Maßnahme / Notiz</h2>
+            <form id="detailUpdateForm" class="form-grid">
+              <div>
+                <label>Typ</label>
+                <select name="update_type">
+                  <option value="note">Notiz</option>
+                  <option value="measure">Maßnahme</option>
+                  <option value="customer">Kundenkontakt</option>
+                  <option value="internal">Interne Klärung</option>
+                </select>
+              </div>
+              <div>
+                <label>Inhalt</label>
+                <textarea name="content" required placeholder="Was wurde getan oder besprochen?"></textarea>
+              </div>
+              <div class="notice" id="detailUpdateNotice"></div>
+              <div><button class="btn-primary" type="submit">Eintrag hinzufügen</button></div>
+            </form>
+          </section>
+          <section class="panel">
+            <h2 style="margin-top:0">Chronik</h2>
+            <div id="detailTimeline" class="timeline"></div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </section>
+
+  <script src="/app.js"></script>
+</body>
+</html>
