@@ -66,8 +66,8 @@
         </div>
         <div class="grid-2">
           <section class="panel">
-            <div class="panel-head"><h2>Letzte Fälle</h2></div>
-            <div id="dashboardCases" class="timeline"></div>
+            <div class="panel-head"><h2>Aktuelle Fälle</h2></div>
+            <div id="dashboardCases" class="dashboard-board"></div>
           </section>
           <section class="panel">
             <div class="panel-head"><h2>Hinweise</h2></div>
@@ -234,6 +234,12 @@
             <textarea name="customer_action" placeholder="z. B. Kunde informiert, Ersatzmobilität, Entschuldigung, Kulanz"></textarea>
           </div>
 
+          <div>
+            <label>Bilder direkt mit hochladen</label>
+            <input id="newCaseImages" type="file" name="images" accept="image/*" capture="environment" multiple>
+            <div class="subtle small">Optional, bis zu 6 Bilder.</div>
+          </div>
+
           <div class="notice" id="newCaseError"></div>
           <button class="btn-primary" type="submit">Fall speichern</button>
         </form>
@@ -338,7 +344,7 @@
           </section>
 
           <section class="panel">
-            <div class="panel-head"><h2>Bilder</h2></div>
+            <div class="panel-head"><h2>Bild-Upload</h2></div>
             <form id="attachmentForm" class="form-grid compact-gap">
               <input id="attachmentInput" type="file" name="images" accept="image/*" capture="environment" multiple>
               <div class="notice" id="attachmentNotice"></div>
@@ -387,7 +393,7 @@
         <div class="topbar">
           <div>
             <h1>Einstellungen</h1>
-            <div class="subtle">Persönliche Benachrichtigungen und Mailversand</div>
+            <div class="subtle">Persönliche Benachrichtigungen</div>
           </div>
         </div>
         <form id="settingsForm" class="panel form-grid">

@@ -150,12 +150,26 @@ function renderDashboard() {
   qs('#kpiMine').textContent = myCases.length;
   qs('#kpiOverdue').textContent = overdue.length;
 
-  qs('#dashboardCases').innerHTML = state.cases.slice(0, 6).map((c) => `
-    <div class="timeline-item clickable" onclick="openCase(${c.id})">
-      <div class="space-between"><strong>#${c.id} ${escapeHtml(c.title)}</strong><span class="badge ${badgeClass(c.priority)}">${escapeHtml(c.priority)}</span></div>
-      <div class="meta">${escapeHtml(typeLabel(c.case_type))} • ${escapeHtml(c.status)} • ${escapeHtml(c.assigned_user_name || 'offen')}</div>
-      <div class="meta">Mechaniker: ${escapeHtml(c.mechanic_code || '—')} • Anhänge: ${c.attachment_count || 0}</div>
-    </div>`).join('') || '<div class="empty">Noch keine Fälle vorhanden.</div>';
+  const rows = state.cases.slice(0, 8).map((c) => `
+    <button class="board-row" onclick="openCase(${c.id})" type="button">
+      <span>${escapeHtml(typeLabel(c.case_type))}</span>
+      <span class="board-title-cell"><strong>${escapeHtml(c.title)}</strong></span>
+      <span>${escapeHtml(c.assigned_user_name ? `${c.assigned_user_name}${c.assigned_user_short_code ? ` (${c.assigned_user_short_code})` : ''}` : 'offen')}</span>
+      <span>${escapeHtml(c.source_area || '—')}</span>
+      <span>${escapeHtml(c.mechanic_code || '—')}</span>
+      <span><span class="badge ${badgeClass(c.priority)}">${escapeHtml(c.priority)}</span></span>
+    </button>`).join('');
+
+  qs('#dashboardCases').innerHTML = `
+    <div class="board-head">
+      <span>Falltyp</span>
+      <span>Titel</span>
+      <span>Zuständigkeit</span>
+      <span>Bereich</span>
+      <span>Mechaniker</span>
+      <span>Priorität</span>
+    </div>
+    ${rows || '<div class="empty">Noch keine Fälle vorhanden.</div>'}`;
 
   const hints = [];
   if (redCases.length) hints.push(`Es gibt ${redCases.length} Rot-Fälle.`);
@@ -269,14 +283,24 @@ qs('#logoutBtn').addEventListener('click', async () => {
 qs('#newCaseForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   setNotice('newCaseError', '');
-  const data = Object.fromEntries(new FormData(e.currentTarget).entries());
+  const form = e.currentTarget;
+  const formData = new FormData(form);
+  const imageFiles = formData.getAll('images').filter((file) => file && file.size);
+  const data = Object.fromEntries(formData.entries());
+  delete data.images;
   try {
     const created = await api('/api/cases', { method: 'POST', body: JSON.stringify(data) });
-    e.currentTarget.reset();
+    if (imageFiles.length) {
+      const uploadData = new FormData();
+      imageFiles.forEach((file) => uploadData.append('images', file));
+      await api(`/api/cases/${created.id}/attachments`, { method: 'POST', body: uploadData });
+    }
+    form.reset();
     await loadCases();
     renderDashboard();
     renderCases();
     await openCase(created.id);
+    setNotice('newCaseError', 'Fall gespeichert.', true);
   } catch (err) {
     setNotice('newCaseError', err.message);
   }
