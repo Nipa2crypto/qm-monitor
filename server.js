@@ -9,6 +9,7 @@ const { Pool } = require('pg');
 const multer = require('multer');
 const nodemailer = require('nodemailer');
 const cron = require('node-cron');
+const PDFDocument = require('pdfkit');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -117,6 +118,7 @@ async function initDb() {
       customer_name TEXT,
       vehicle TEXT,
       order_ref TEXT,
+      service_advisor TEXT,
       mechanic_code TEXT,
       internal_action TEXT,
       customer_action TEXT,
@@ -169,6 +171,7 @@ async function initDb() {
   const migrations = [
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS short_code TEXT`,
     `ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user'`,
+    `ALTER TABLE cases ADD COLUMN IF NOT EXISTS service_advisor TEXT`,
     `ALTER TABLE cases ADD COLUMN IF NOT EXISTS mechanic_code TEXT`,
     `ALTER TABLE cases ADD COLUMN IF NOT EXISTS internal_action TEXT`,
     `ALTER TABLE cases ADD COLUMN IF NOT EXISTS customer_action TEXT`,
@@ -401,11 +404,11 @@ app.post('/api/cases', authRequired, async (req, res) => {
   const created = await pool.query(
     `INSERT INTO cases (
       case_type, title, description, priority, source_area, customer_name, vehicle, order_ref, due_date,
-      assigned_user_id, created_by, updated_at, mechanic_code, internal_action, customer_action,
+      assigned_user_id, created_by, updated_at, service_advisor, mechanic_code, internal_action, customer_action,
       closed, category, repeat_case, cause_guess, complaint_validity, escalation_level, linked_internal_process
     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW(),$12,$13,$14,FALSE,$15,$16,$17,$18,$19,$20) RETURNING *`,
     [case_type, title, description, priority || 'gelb', source_area || null, customer_name || null, vehicle || null, order_ref || null,
-      due_date || null, assigned_user_id || null, req.user.id, mechanic_code || null, internal_action || null, customer_action || null,
+      due_date || null, assigned_user_id || null, req.user.id, service_advisor || null, mechanic_code || null, internal_action || null, customer_action || null,
       category || null, toBool(repeat_case, false), cause_guess || null, complaint_validity || 'offen', escalation_level || 'mittel', toBool(linked_internal_process, false)]
   );
   await pool.query(`INSERT INTO case_updates (case_id, user_id, update_type, content) VALUES ($1, $2, 'system', $3)`, [created.rows[0].id, req.user.id, `Fall angelegt durch ${req.user.name}`]);
@@ -415,7 +418,7 @@ app.post('/api/cases', authRequired, async (req, res) => {
 app.patch('/api/cases/:id', authRequired, async (req, res) => {
   const id = Number(req.params.id);
   const payload = req.body || {};
-  const allowed = ['status','priority','assigned_user_id','due_date','source_area','mechanic_code','internal_action','customer_action','customer_name','vehicle','order_ref','title','description','category','cause_guess','complaint_validity','escalation_level'];
+  const allowed = ['status','priority','assigned_user_id','due_date','source_area','service_advisor','mechanic_code','internal_action','customer_action','customer_name','vehicle','order_ref','title','description','category','cause_guess','complaint_validity','escalation_level'];
   const keys = Object.keys(payload).filter((k) => allowed.includes(k));
   const sets = [];
   const params = [];
@@ -475,24 +478,19 @@ app.get('/api/attachments/:id', authRequired, async (req, res) => {
   res.send(Buffer.from(row.data_base64, 'base64'));
 });
 
-app.get('/api/analytics', authRequired, roleRequired('teamleader', 'admin'), async (req, res) => {
-  const rows = (await pool.query(`
-    SELECT c.id, c.case_type, c.priority, c.status, c.source_area, c.mechanic_code, c.category, c.repeat_case, c.complaint_validity,
-           c.escalation_level, c.linked_internal_process, c.closed, c.created_at, c.closed_at,
-           assignee.name AS assigned_user_name, assignee.short_code AS assigned_user_short_code
-    FROM cases c
-    LEFT JOIN users assignee ON assignee.id = c.assigned_user_id
-    ORDER BY c.created_at ASC`)).rows;
 
+async function fetchAnalyticsData(){
+  const rows = (await pool.query(`
+    SELECT c.id, c.case_type, c.priority, c.status, c.source_area, c.service_advisor, c.mechanic_code, c.category, c.repeat_case, c.complaint_validity,
+           c.escalation_level, c.linked_internal_process, c.closed, c.created_at, c.closed_at, c.due_date
+    FROM cases c
+    ORDER BY c.created_at ASC`)).rows;
   const analytics = {
     totals: { all: rows.length, complaints: 0, internal: 0, open: 0, closed: 0, repeat: 0, overdue: 0 },
     byMonth: {}, byQuarter: {},
     byArea: { customer_complaint: {}, internal_process: {} },
     byCategory: { customer_complaint: {}, internal_process: {} },
-    byMechanic: {},
-    linked: {},
-    validity: {},
-    escalation: {},
+    byMechanic: {}, byServiceAdvisor: {}, linked: {}, validity: {}, escalation: {},
   };
   const today = todayLocalISO();
   for (const r of rows) {
@@ -508,25 +506,54 @@ app.get('/api/analytics', authRequired, roleRequired('teamleader', 'admin'), asy
     analytics.byQuarter[quarter][r.case_type === 'customer_complaint' ? 'complaints' : 'internal'] += 1;
     const areaBucket = analytics.byArea[r.case_type]; areaBucket[r.source_area || 'Unbekannt'] = (areaBucket[r.source_area || 'Unbekannt'] || 0) + 1;
     const catBucket = analytics.byCategory[r.case_type]; catBucket[r.category || 'Unkategorisiert'] = (catBucket[r.category || 'Unkategorisiert'] || 0) + 1;
-    const mech = r.mechanic_code || '—';
-    analytics.byMechanic[mech] ||= { all: 0, complaints: 0, internal: 0, open: 0, closed: 0 };
-    analytics.byMechanic[mech].all += 1;
-    analytics.byMechanic[mech][r.case_type === 'customer_complaint' ? 'complaints' : 'internal'] += 1;
-    analytics.byMechanic[mech][r.closed ? 'closed' : 'open'] += 1;
+    const mech = r.mechanic_code || '—'; analytics.byMechanic[mech] ||= { all: 0, complaints: 0, internal: 0, open: 0, closed: 0 }; analytics.byMechanic[mech].all += 1; analytics.byMechanic[mech][r.case_type === 'customer_complaint' ? 'complaints' : 'internal'] += 1; analytics.byMechanic[mech][r.closed ? 'closed' : 'open'] += 1;
+    const sb = r.service_advisor || '—'; analytics.byServiceAdvisor[sb] ||= { all: 0, complaints: 0, internal: 0, open: 0, closed: 0 }; analytics.byServiceAdvisor[sb].all += 1; analytics.byServiceAdvisor[sb][r.case_type === 'customer_complaint' ? 'complaints' : 'internal'] += 1; analytics.byServiceAdvisor[sb][r.closed ? 'closed' : 'open'] += 1;
     analytics.linked[r.linked_internal_process ? 'mit Bezug' : 'ohne Bezug'] = (analytics.linked[r.linked_internal_process ? 'mit Bezug' : 'ohne Bezug'] || 0) + 1;
     analytics.validity[r.complaint_validity || 'offen'] = (analytics.validity[r.complaint_validity || 'offen'] || 0) + 1;
     analytics.escalation[r.escalation_level || 'mittel'] = (analytics.escalation[r.escalation_level || 'mittel'] || 0) + 1;
   }
-  res.json(analytics);
+  return analytics;
+}
+
+app.get('/api/analytics', authRequired, roleRequired('teamleader', 'admin'), async (_req, res) => {
+  res.json(await fetchAnalyticsData());
 });
 
 app.get('/api/analytics/export', authRequired, roleRequired('teamleader', 'admin'), async (_req, res) => {
-  const rows = (await pool.query(`SELECT id, case_type, title, source_area, mechanic_code, category, priority, status, repeat_case, complaint_validity, escalation_level, linked_internal_process, created_at, closed_at FROM cases ORDER BY created_at DESC`)).rows;
-  const header = ['ID','Typ','Titel','Bereich','Mechaniker','Kategorie','Priorität','Status','Wiederholfall','Berechtigt','Eskalation','Bezug interner Prozessfehler','Erstellt am','Abgeschlossen am'];
-  const csv = [header.join(';')].concat(rows.map(r => [r.id, r.case_type, r.title, r.source_area || '', r.mechanic_code || '', r.category || '', r.priority, r.status, r.repeat_case ? 'ja' : 'nein', r.complaint_validity || '', r.escalation_level || '', r.linked_internal_process ? 'ja' : 'nein', new Date(r.created_at).toLocaleString('de-DE'), r.closed_at ? new Date(r.closed_at).toLocaleString('de-DE') : ''].map(v => '"'+String(v).replaceAll('"','""')+'"').join(';'))).join('\n');
+  const rows = (await pool.query(`SELECT id, case_type, title, source_area, service_advisor, mechanic_code, category, priority, status, repeat_case, complaint_validity, escalation_level, linked_internal_process, created_at, closed_at FROM cases ORDER BY created_at DESC`)).rows;
+  const header = ['ID','Typ','Titel','Bereich','SB','Mechaniker','Kategorie','Priorität','Status','Wiederholfall','Berechtigt','Eskalation','Bezug interner Prozessfehler','Erstellt am','Abgeschlossen am'];
+  const csv = [header.join(';')].concat(rows.map(r => [r.id, r.case_type, r.title, r.source_area || '', r.service_advisor || '', r.mechanic_code || '', r.category || '', r.priority, r.status, r.repeat_case ? 'ja' : 'nein', r.complaint_validity || '', r.escalation_level || '', r.linked_internal_process ? 'ja' : 'nein', new Date(r.created_at).toLocaleString('de-DE'), r.closed_at ? new Date(r.closed_at).toLocaleString('de-DE') : ''].map(v => '"'+String(v).replaceAll('"','""')+'"').join(';'))).join('\n');
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename="qm-monitor-auswertung.csv"');
   res.send('\ufeff' + csv);
+});
+
+
+app.get('/api/analytics/report.pdf', authRequired, roleRequired('teamleader', 'admin'), async (_req, res) => {
+  const rows = (await pool.query(`SELECT id, case_type, title, source_area, service_advisor, mechanic_code, category, priority, status, repeat_case, complaint_validity, escalation_level, linked_internal_process, created_at, closed_at FROM cases ORDER BY created_at DESC`)).rows;
+  const analytics = await fetchAnalyticsData();
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', 'attachment; filename="qm-monitor-auswertung.pdf"');
+  const doc = new PDFDocument({ margin: 40, size: 'A4' });
+  doc.pipe(res);
+  const line = (label, value='—') => { doc.font('Helvetica-Bold').text(label + ': ', { continued: true }); doc.font('Helvetica').text(String(value)); };
+  const section = (title) => { doc.moveDown(); doc.fontSize(15).font('Helvetica-Bold').text(title); doc.moveDown(0.4); doc.fontSize(10).font('Helvetica'); };
+  doc.fontSize(22).font('Helvetica-Bold').text('QM Monitor Auswertung');
+  doc.fontSize(10).font('Helvetica').fillColor('#475569').text(`Erstellt am ${new Date().toLocaleString('de-DE')}`).fillColor('black');
+  section('Übersicht');
+  line('Reklamationen', analytics.totals.complaints); line('Interne Prozessfehler', analytics.totals.internal); line('Wiederholfälle', analytics.totals.repeat); line('Überfällige Fälle', analytics.totals.overdue);
+  section('Monate');
+  Object.entries(analytics.byMonth).forEach(([k,v])=> line(k, `Reklamationen ${v.complaints} | Prozessfehler ${v.internal}`));
+  section('Quartale');
+  Object.entries(analytics.byQuarter).forEach(([k,v])=> line(k, `Reklamationen ${v.complaints} | Prozessfehler ${v.internal}`));
+  section('Bereiche Reklamationen'); Object.entries(analytics.byArea.customer_complaint).forEach(([k,v])=> line(k,v));
+  section('Bereiche Prozessfehler'); Object.entries(analytics.byArea.internal_process).forEach(([k,v])=> line(k,v));
+  section('Mechaniker'); Object.entries(analytics.byMechanic).forEach(([k,v])=> line(k, `R ${v.complaints} | P ${v.internal} | offen ${v.open} | abgeschlossen ${v.closed}`));
+  section('Serviceberater'); Object.entries(analytics.byServiceAdvisor).forEach(([k,v])=> line(k, `R ${v.complaints} | P ${v.internal} | offen ${v.open} | abgeschlossen ${v.closed}`));
+  section('Qualitätsindikatoren'); Object.entries(analytics.validity).forEach(([k,v])=> line(`Berechtigt ${k}`, v)); Object.entries(analytics.escalation).forEach(([k,v])=> line(`Eskalation ${k}`, v)); Object.entries(analytics.linked).forEach(([k,v])=> line(`Bezug ${k}`, v));
+  section('Aktuelle Fälle');
+  rows.slice(0, 25).forEach((r)=> { if (doc.y > 760) doc.addPage(); doc.font('Helvetica-Bold').text(`#${r.id} ${r.title}`); doc.font('Helvetica').text(`${r.case_type === 'customer_complaint' ? 'Kundenreklamation' : 'Interner Prozessfehler'} | Bereich ${r.source_area || '—'} | SB ${r.service_advisor || '—'} | Mechaniker ${r.mechanic_code || '—'} | Prio ${r.priority} | Status ${r.status}`); doc.moveDown(0.3); });
+  doc.end();
 });
 
 app.post('/api/admin/send-weekly-summary-now', authRequired, roleRequired('admin'), async (_req, res) => {
