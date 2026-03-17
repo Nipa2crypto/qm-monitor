@@ -1,6 +1,6 @@
 {
   "name": "qm-monitor",
-  "version": "1.2.2",
+  "version": "2.3.1",
   "description": "QM Monitor - Reklamations- und Prozessscreening",
   "main": "server.js",
   "type": "commonjs",

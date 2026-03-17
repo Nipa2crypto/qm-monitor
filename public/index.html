@@ -14,14 +14,8 @@
       <div class="logo">QM Monitor</div>
       <p class="subtle">Reklamationen, Prozessfehler und Maßnahmen zentral steuern.</p>
       <form id="loginForm" class="form-grid">
-        <div>
-          <label for="loginEmail">E-Mail</label>
-          <input id="loginEmail" type="email" autocomplete="username" required>
-        </div>
-        <div>
-          <label for="loginPassword">Passwort</label>
-          <input id="loginPassword" type="password" autocomplete="current-password" required>
-        </div>
+        <div><label for="loginEmail">E-Mail</label><input id="loginEmail" type="email" autocomplete="username" required></div>
+        <div><label for="loginPassword">Passwort</label><input id="loginPassword" type="password" autocomplete="current-password" required></div>
         <div class="notice" id="loginError"></div>
         <button class="btn-primary" type="submit">Einloggen</button>
       </form>
@@ -39,25 +33,15 @@
         <button class="nav-btn active" data-view="dashboard">Dashboard</button>
         <button class="nav-btn" data-view="cases">Fälle</button>
         <button class="nav-btn" data-view="newCase">Neuer Fall</button>
+        <button class="nav-btn hidden" data-view="analytics" id="analyticsNavBtn">Auswertungen</button>
         <button class="nav-btn" data-view="settings">Einstellungen</button>
       </nav>
-      <div class="sidebar-actions">
-        <button id="logoutBtn" class="btn-secondary full">Logout</button>
-      </div>
+      <div class="sidebar-actions"><button id="logoutBtn" class="btn-secondary full">Logout</button></div>
     </aside>
 
     <main class="main">
       <div id="dashboardView" class="view">
-        <div class="topbar">
-          <div>
-            <h1>Dashboard</h1>
-            <div class="subtle">Schnellüberblick über offene und kritische Fälle</div>
-          </div>
-          <div class="topbar-actions">
-            <button class="btn-secondary" data-jump="cases">Zur Fallliste</button>
-            <button class="btn-primary" data-jump="newCase">Neuer Fall</button>
-          </div>
-        </div>
+        <div class="topbar"><div><h1>Dashboard</h1><div class="subtle">Schnellüberblick über offene und kritische Fälle</div></div><div class="topbar-actions"><button class="btn-secondary" data-jump="cases">Zur Fallliste</button><button class="btn-primary" data-jump="newCase">Neuer Fall</button></div></div>
         <div class="kpi-grid">
           <div class="kpi"><div class="subtle">Offen</div><div id="kpiOpen" class="num">0</div></div>
           <div class="kpi"><div class="subtle">Rot</div><div id="kpiRed" class="num">0</div></div>
@@ -65,337 +49,84 @@
           <div class="kpi"><div class="subtle">Überfällig</div><div id="kpiOverdue" class="num">0</div></div>
         </div>
         <div class="grid-2">
-          <section class="panel">
-            <div class="panel-head"><h2>Aktuelle Fälle</h2></div>
-            <div id="dashboardCases" class="dashboard-board"></div>
-          </section>
-          <section class="panel">
-            <div class="panel-head"><h2>Hinweise</h2></div>
-            <div id="dashboardHints" class="timeline"></div>
-          </section>
+          <section class="panel"><div class="panel-head"><h2>Aktuelle Fälle</h2></div><div id="dashboardCases" class="dashboard-board"></div></section>
+          <section class="panel"><div class="panel-head"><h2>Hinweise</h2></div><div id="dashboardHints" class="timeline"></div></section>
         </div>
       </div>
 
       <div id="casesView" class="view hidden">
-        <div class="topbar">
-          <div>
-            <h1>Fallliste</h1>
-            <div class="subtle">Filtern, prüfen und weiterbearbeiten</div>
-          </div>
-        </div>
-        <div class="panel">
-          <div class="filters">
-            <div>
-              <label>Status</label>
-              <select id="filterStatus">
-                <option value="all">Alle</option>
-                <option value="neu">Neu</option>
-                <option value="im screening">Im Screening</option>
-                <option value="in bearbeitung">In Bearbeitung</option>
-                <option value="warten auf rueckmeldung">Warten auf Rückmeldung</option>
-                <option value="abgeschlossen">Abgeschlossen</option>
-              </select>
-            </div>
-            <div>
-              <label>Priorität</label>
-              <select id="filterPriority">
-                <option value="all">Alle</option>
-                <option value="rot">Rot</option>
-                <option value="gelb">Gelb</option>
-                <option value="gruen">Grün</option>
-              </select>
-            </div>
-            <div>
-              <label>Typ</label>
-              <select id="filterType">
-                <option value="all">Alle</option>
-                <option value="customer_complaint">Kundenreklamation</option>
-                <option value="internal_process">Interner Prozessfehler</option>
-              </select>
-            </div>
-            <div>
-              <label>&nbsp;</label>
-              <button id="filterMineBtn" class="btn-secondary full">Nur meine Fälle</button>
-            </div>
-          </div>
-        </div>
-        <div class="panel table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Titel</th>
-                <th>Typ</th>
-                <th>Prio</th>
-                <th>Status</th>
-                <th>Mechaniker</th>
-                <th>Zuständig</th>
-                <th>Fällig</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody id="casesTableBody"></tbody>
-          </table>
-        </div>
+        <div class="topbar"><div><h1>Fallliste</h1><div class="subtle">Filtern, prüfen und weiterbearbeiten</div></div></div>
+        <div class="panel"><div class="filters">
+          <div><label>Status</label><select id="filterStatus"><option value="all">Alle</option><option value="neu">Neu</option><option value="im screening">Im Screening</option><option value="in bearbeitung">In Bearbeitung</option><option value="warten auf rueckmeldung">Warten auf Rückmeldung</option><option value="abgeschlossen">Abgeschlossen</option></select></div>
+          <div><label>Priorität</label><select id="filterPriority"><option value="all">Alle</option><option value="rot">Rot</option><option value="gelb">Gelb</option><option value="gruen">Grün</option></select></div>
+          <div><label>Typ</label><select id="filterType"><option value="all">Alle</option><option value="customer_complaint">Kundenreklamation</option><option value="internal_process">Interner Prozessfehler</option></select></div>
+          <div><label>&nbsp;</label><button id="filterMineBtn" class="btn-secondary full">Nur meine Fälle</button></div>
+        </div></div>
+        <div class="panel table-wrap"><table><thead><tr><th>Falltyp</th><th>Titel</th><th>Zuständigkeit</th><th>Bereich</th><th>Mechaniker</th><th>Priorität</th><th></th></tr></thead><tbody id="casesTableBody"></tbody></table></div>
       </div>
 
       <div id="newCaseView" class="view hidden">
-        <div class="topbar">
-          <div>
-            <h1>Neuer Fall</h1>
-            <div class="subtle">Kundenreklamation oder interner Prozessfehler erfassen</div>
-          </div>
-        </div>
+        <div class="topbar"><div><h1>Neuer Fall</h1><div class="subtle">Kundenreklamation oder interner Prozessfehler erfassen</div></div></div>
         <form id="newCaseForm" class="panel form-grid">
-          <div class="row">
-            <div>
-              <label>Falltyp</label>
-              <select name="case_type" required>
-                <option value="customer_complaint">Kundenreklamation</option>
-                <option value="internal_process">Interner Prozessfehler</option>
-              </select>
-            </div>
-            <div>
-              <label>Priorität</label>
-              <select name="priority">
-                <option value="gelb">Gelb</option>
-                <option value="rot">Rot</option>
-                <option value="gruen">Grün</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label>Titel</label>
-            <input name="title" required placeholder="z. B. Reklamation nach Bremsenservice">
-          </div>
-          <div>
-            <label>Beschreibung</label>
-            <textarea name="description" required placeholder="Was ist passiert?"></textarea>
-          </div>
-
-          <div class="row">
-            <div>
-              <label>Bereich</label>
-              <select name="source_area">
-                <option value="">Bitte wählen</option>
-                <option>Service</option>
-                <option>Werkstatt</option>
-                <option>Diagnose</option>
-                <option>ETL</option>
-                <option>Aufbereitung</option>
-                <option>Carrosserie/Lack</option>
-              </select>
-            </div>
-            <div>
-              <label>Zuständig</label>
-              <select name="assigned_user_id" id="assignedUserSelect">
-                <option value="">Noch offen</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="row">
-            <div>
-              <label>Kunde</label>
-              <input name="customer_name" placeholder="nur bei Kundenreklamation relevant">
-            </div>
-            <div>
-              <label>Fahrzeug</label>
-              <input name="vehicle" placeholder="Kennzeichen / VIN / Modell">
-            </div>
-          </div>
-
-          <div class="row">
-            <div>
-              <label>Auftrag / Referenz</label>
-              <input name="order_ref" placeholder="Auftragsnummer / AIR / Rechnung">
-            </div>
-            <div>
-              <label>Mechaniker-Kürzel</label>
-              <input name="mechanic_code" placeholder="z. B. DEN / VAD / SEB">
-            </div>
-          </div>
-
-          <div class="row">
-            <div>
-              <label>Fällig bis</label>
-              <input name="due_date" type="date">
-            </div>
-            <div></div>
-          </div>
-
-          <div>
-            <label>Maßnahme intern</label>
-            <textarea name="internal_action" placeholder="z. B. Nacharbeit intern, Rücksprache, Schulung, Prozessanpassung"></textarea>
-          </div>
-          <div>
-            <label>Maßnahme Kundenzufriedenheit</label>
-            <textarea name="customer_action" placeholder="z. B. Kunde informiert, Ersatzmobilität, Entschuldigung, Kulanz"></textarea>
-          </div>
-
-          <div>
-            <label>Bilder direkt mit hochladen</label>
-            <input id="newCaseImages" type="file" name="images" accept="image/*" capture="environment" multiple>
-            <div class="subtle small">Optional, bis zu 6 Bilder.</div>
-          </div>
-
+          <div class="row"><div><label>Falltyp</label><select name="case_type" id="newCaseType" required><option value="customer_complaint">Kundenreklamation</option><option value="internal_process">Interner Prozessfehler</option></select></div><div><label>Priorität</label><select name="priority"><option value="gelb">Gelb</option><option value="rot">Rot</option><option value="gruen">Grün</option></select></div></div>
+          <div><label>Titel</label><input name="title" required></div>
+          <div><label>Beschreibung</label><textarea name="description" required></textarea></div>
+          <div class="row"><div><label>Bereich</label><select name="source_area"><option value="">Bitte wählen</option><option>Service</option><option>Werkstatt</option><option>Diagnose</option><option>ETL</option><option>Aufbereitung</option><option>Carrosserie/Lack</option></select></div><div><label>Zuständig</label><select name="assigned_user_id" id="assignedUserSelect"><option value="">Noch offen</option></select></div></div>
+          <div class="row"><div><label>Kunde</label><input name="customer_name"></div><div><label>Fahrzeug</label><input name="vehicle"></div></div>
+          <div class="row"><div><label>Auftrag / Referenz</label><input name="order_ref"></div><div><label>Mechaniker-Kürzel</label><input name="mechanic_code" placeholder="DEN / VAD / SEB"></div></div>
+          <div class="row"><div><label>Fällig bis</label><input name="due_date" type="date"></div><div><label>Eskalationsstufe</label><select name="escalation_level" id="newEscalation"><option value="niedrig">niedrig</option><option value="mittel" selected>mittel</option><option value="hoch">hoch</option><option value="kritisch">kritisch</option></select></div></div>
+          <div class="row"><div><label>Fehlerkategorie</label><select name="category" id="newCategorySelect"></select></div><div><label>Reklamation berechtigt</label><select name="complaint_validity"><option value="offen">offen</option><option value="ja">ja</option><option value="teilweise">teilweise</option><option value="nein">nein</option></select></div></div>
+          <div><label>Ursache / Vermutung</label><textarea name="cause_guess"></textarea></div>
+          <div class="check-grid"><label class="inline-check"><input type="checkbox" name="repeat_case" style="width:auto"> Wiederholfall</label><label class="inline-check"><input type="checkbox" name="linked_internal_process" style="width:auto"> Bezug zu internem Prozessfehler</label></div>
+          <div><label>Maßnahme intern</label><textarea name="internal_action"></textarea></div>
+          <div><label>Maßnahme Kundenzufriedenheit</label><textarea name="customer_action"></textarea></div>
+          <div><label>Bilder direkt mit hochladen</label><input id="newCaseImages" type="file" name="images" accept="image/*" capture="environment" multiple><div class="subtle small">Optional, bis zu 6 Bilder.</div></div>
           <div class="notice" id="newCaseError"></div>
           <button class="btn-primary" type="submit">Fall speichern</button>
         </form>
       </div>
 
       <div id="caseDetailView" class="view hidden">
-        <div class="topbar stack-mobile">
-          <div>
-            <h1 id="detailTitle">Fall</h1>
-            <div id="detailMeta" class="subtle"></div>
-          </div>
-          <div class="topbar-actions">
-            <button id="backToCasesBtn" class="btn-secondary">Zurück</button>
-          </div>
-        </div>
-
+        <div class="topbar stack-mobile"><div><h1 id="detailTitle">Fall</h1><div id="detailMeta" class="subtle"></div></div><div class="topbar-actions"><button id="backToCasesBtn" class="btn-secondary">Zurück</button></div></div>
         <div class="grid-2 detail-grid">
-          <section class="panel">
-            <div class="panel-head"><h2>Fall bearbeiten</h2></div>
+          <section class="panel"><div class="panel-head"><h2>Fall bearbeiten</h2></div>
             <form id="detailEditForm" class="form-grid">
-              <div class="row">
-                <div>
-                  <label>Status</label>
-                  <select name="status">
-                    <option value="neu">Neu</option>
-                    <option value="im screening">Im Screening</option>
-                    <option value="in bearbeitung">In Bearbeitung</option>
-                    <option value="warten auf rueckmeldung">Warten auf Rückmeldung</option>
-                    <option value="abgeschlossen">Abgeschlossen</option>
-                  </select>
-                </div>
-                <div>
-                  <label>Priorität</label>
-                  <select name="priority">
-                    <option value="gelb">Gelb</option>
-                    <option value="rot">Rot</option>
-                    <option value="gruen">Grün</option>
-                  </select>
-                </div>
-              </div>
-
-              <div class="row">
-                <div>
-                  <label>Zuständig</label>
-                  <select name="assigned_user_id" id="detailAssignedUser">
-                    <option value="">Noch offen</option>
-                  </select>
-                </div>
-                <div>
-                  <label>Bereich</label>
-                  <select name="source_area">
-                    <option value="">Bitte wählen</option>
-                    <option>Service</option>
-                    <option>Werkstatt</option>
-                    <option>Diagnose</option>
-                    <option>ETL</option>
-                    <option>Aufbereitung</option>
-                    <option>Carrosserie/Lack</option>
-                  </select>
-                </div>
-              </div>
-
-              <div class="row">
-                <div>
-                  <label>Fällig bis</label>
-                  <input name="due_date" type="date">
-                </div>
-                <div>
-                  <label>Mechaniker-Kürzel</label>
-                  <input name="mechanic_code" placeholder="DEN / VAD / SEB">
-                </div>
-              </div>
-
-              <div class="row">
-                <div>
-                  <label>Kunde</label>
-                  <input name="customer_name">
-                </div>
-                <div>
-                  <label>Fahrzeug</label>
-                  <input name="vehicle">
-                </div>
-              </div>
-
-              <div>
-                <label>Auftrag / Referenz</label>
-                <input name="order_ref">
-              </div>
-
-              <div>
-                <label>Maßnahme intern</label>
-                <textarea name="internal_action"></textarea>
-              </div>
-              <div>
-                <label>Maßnahme Kundenzufriedenheit</label>
-                <textarea name="customer_action"></textarea>
-              </div>
+              <div class="row"><div><label>Status</label><select name="status"><option value="neu">Neu</option><option value="im screening">Im Screening</option><option value="in bearbeitung">In Bearbeitung</option><option value="warten auf rueckmeldung">Warten auf Rückmeldung</option><option value="abgeschlossen">Abgeschlossen</option></select></div><div><label>Priorität</label><select name="priority"><option value="gelb">Gelb</option><option value="rot">Rot</option><option value="gruen">Grün</option></select></div></div>
+              <div class="row"><div><label>Zuständig</label><select name="assigned_user_id" id="detailAssignedUser"><option value="">Noch offen</option></select></div><div><label>Bereich</label><select name="source_area"><option value="">Bitte wählen</option><option>Service</option><option>Werkstatt</option><option>Diagnose</option><option>ETL</option><option>Aufbereitung</option><option>Carrosserie/Lack</option></select></div></div>
+              <div class="row"><div><label>Fällig bis</label><input name="due_date" type="date"></div><div><label>Mechaniker-Kürzel</label><input name="mechanic_code"></div></div>
+              <div class="row"><div><label>Kunde</label><input name="customer_name"></div><div><label>Fahrzeug</label><input name="vehicle"></div></div>
+              <div><label>Auftrag / Referenz</label><input name="order_ref"></div>
+              <div class="row"><div><label>Fehlerkategorie</label><select name="category" id="detailCategorySelect"></select></div><div><label>Reklamation berechtigt</label><select name="complaint_validity"><option value="offen">offen</option><option value="ja">ja</option><option value="teilweise">teilweise</option><option value="nein">nein</option></select></div></div>
+              <div class="row"><div><label>Eskalationsstufe</label><select name="escalation_level"><option value="niedrig">niedrig</option><option value="mittel">mittel</option><option value="hoch">hoch</option><option value="kritisch">kritisch</option></select></div><div></div></div>
+              <div><label>Ursache / Vermutung</label><textarea name="cause_guess"></textarea></div>
+              <div class="check-grid"><label class="inline-check"><input type="checkbox" name="repeat_case" style="width:auto"> Wiederholfall</label><label class="inline-check"><input type="checkbox" name="linked_internal_process" style="width:auto"> Bezug zu internem Prozessfehler</label></div>
+              <div><label>Maßnahme intern</label><textarea name="internal_action"></textarea></div>
+              <div><label>Maßnahme Kundenzufriedenheit</label><textarea name="customer_action"></textarea></div>
               <label class="inline-check"><input type="checkbox" name="closed" style="width:auto"> Fall abgeschlossen ✔️</label>
               <div class="notice" id="detailEditNotice"></div>
               <button class="btn-primary" type="submit">Änderungen speichern</button>
             </form>
           </section>
-
-          <section class="panel">
-            <div class="panel-head"><h2>Bild-Upload</h2></div>
-            <form id="attachmentForm" class="form-grid compact-gap">
-              <input id="attachmentInput" type="file" name="images" accept="image/*" capture="environment" multiple>
-              <div class="notice" id="attachmentNotice"></div>
-              <button type="submit" class="btn-secondary">Bilder hochladen</button>
-            </form>
-            <div id="attachmentList" class="attachment-grid"></div>
-          </section>
+          <section class="panel"><div class="panel-head"><h2>Bild-Upload</h2></div><form id="attachmentForm" class="form-grid compact-gap"><input id="attachmentInput" type="file" name="images" accept="image/*" capture="environment" multiple><div class="notice" id="attachmentNotice"></div><button type="submit" class="btn-secondary">Bilder hochladen</button></form><div id="attachmentList" class="attachment-grid"></div></section>
         </div>
+        <div class="grid-2 detail-grid"><section class="panel"><div class="panel-head"><h2>Chronik / Maßnahmen</h2></div><form id="detailUpdateForm" class="form-grid compact-gap"><div class="row"><div><label>Eintragstyp</label><select name="update_type"><option value="note">Notiz</option><option value="internal_action">Maßnahme intern</option><option value="customer_action">Maßnahme Kundenzufriedenheit</option><option value="escalation">Eskalation</option><option value="status">Status-Hinweis</option></select></div><div></div></div><div><label>Inhalt</label><textarea name="content"></textarea></div><div class="notice" id="detailUpdateNotice"></div><button class="btn-secondary" type="submit">Eintrag hinzufügen</button></form><hr><div id="detailTimeline" class="timeline"></div></section><section class="panel"><div class="panel-head"><h2>Zusammenfassung</h2></div><div id="detailSummary" class="summary-list"></div></section></div>
+      </div>
 
-        <div class="grid-2 detail-grid">
-          <section class="panel">
-            <div class="panel-head"><h2>Chronik / Maßnahmen</h2></div>
-            <form id="detailUpdateForm" class="form-grid compact-gap">
-              <div class="row">
-                <div>
-                  <label>Eintragstyp</label>
-                  <select name="update_type">
-                    <option value="note">Notiz</option>
-                    <option value="internal_action">Maßnahme intern</option>
-                    <option value="customer_action">Maßnahme Kundenzufriedenheit</option>
-                    <option value="escalation">Eskalation</option>
-                    <option value="status">Status-Hinweis</option>
-                  </select>
-                </div>
-                <div></div>
-              </div>
-              <div>
-                <label>Inhalt</label>
-                <textarea name="content" placeholder="Maßnahme, Rückmeldung oder Eskalation dokumentieren"></textarea>
-              </div>
-              <div class="notice" id="detailUpdateNotice"></div>
-              <button class="btn-secondary" type="submit">Eintrag hinzufügen</button>
-            </form>
-            <hr>
-            <div id="detailTimeline" class="timeline"></div>
-          </section>
-
-          <section class="panel">
-            <div class="panel-head"><h2>Zusammenfassung</h2></div>
-            <div id="detailSummary" class="summary-list"></div>
-          </section>
+      <div id="analyticsView" class="view hidden">
+        <div class="topbar"><div><h1>Auswertungen</h1><div class="subtle">Nur für Teamleiter und Admin sichtbar</div></div><div class="topbar-actions"><button id="exportAnalyticsBtn" class="btn-secondary">CSV Export</button><button id="printAnalyticsBtn" class="btn-primary">PDF / Drucken</button></div></div>
+        <div class="kpi-grid"><div class="kpi"><div class="subtle">Reklamationen</div><div id="anComplaints" class="num">0</div></div><div class="kpi"><div class="subtle">Prozessfehler</div><div id="anInternal" class="num">0</div></div><div class="kpi"><div class="subtle">Wiederholfälle</div><div id="anRepeat" class="num">0</div></div><div class="kpi"><div class="subtle">Überfällig</div><div id="anOverdue" class="num">0</div></div></div>
+        <div class="grid-2">
+          <section class="panel"><div class="panel-head"><h2>Zeitverlauf Reklamationen / Prozessfehler</h2></div><canvas id="trendChart" height="180"></canvas></section>
+          <section class="panel"><div class="panel-head"><h2>Monat / Quartal</h2></div><div id="periodTables" class="stats-grid"></div></section>
+        </div>
+        <div class="grid-2">
+          <section class="panel"><div class="panel-head"><h2>Bereiche & Kategorien</h2></div><div id="categoryStats" class="stats-grid"></div></section>
+          <section class="panel"><div class="panel-head"><h2>Mechaniker / Zusammenhänge</h2></div><div id="mechanicStats" class="stats-grid"></div></section>
         </div>
       </div>
 
       <div id="settingsView" class="view hidden">
-        <div class="topbar">
-          <div>
-            <h1>Einstellungen</h1>
-            <div class="subtle">Persönliche Benachrichtigungen</div>
-          </div>
-        </div>
+        <div class="topbar"><div><h1>Einstellungen</h1><div class="subtle">Persönliche Benachrichtigungen</div></div></div>
         <form id="settingsForm" class="panel form-grid">
           <label class="inline-check"><input type="checkbox" name="notify_enabled" style="width:auto"> Benachrichtigungen aktiv</label>
           <label class="inline-check"><input type="checkbox" name="notify_only_assigned" style="width:auto"> Nur eigene / zugewiesene Fälle</label>
@@ -410,29 +141,7 @@
           <div class="notice" id="settingsNotice"></div>
           <button class="btn-primary" type="submit">Speichern</button>
         </form>
-
-        <section id="adminUserPanel" class="panel hidden">
-          <div class="panel-head"><h2>Benutzer anlegen</h2><button id="sendWeeklyNowBtn" class="btn-secondary" type="button">Wochenübersicht jetzt senden</button></div>
-          <form id="createUserForm" class="form-grid">
-            <div class="row">
-              <div><label>Name</label><input name="name" required></div>
-              <div><label>Kürzel</label><input name="short_code" placeholder="DEN / VAD / SEB"></div>
-            </div>
-            <div class="row">
-              <div><label>E-Mail</label><input name="email" type="email" required></div>
-              <div>
-                <label>Rolle</label>
-                <select name="role">
-                  <option value="user">User</option>
-                  <option value="admin">Admin</option>
-                </select>
-              </div>
-            </div>
-            <div><label>Passwort</label><input name="password" type="password" required></div>
-            <div class="notice" id="userCreateNotice"></div>
-            <button class="btn-secondary" type="submit">Benutzer anlegen</button>
-          </form>
-        </section>
+        <section id="adminUserPanel" class="panel hidden"><div class="panel-head"><h2>Benutzer anlegen</h2></div><form id="createUserForm" class="form-grid"><div class="row"><div><label>Name</label><input name="name" required></div><div><label>Kürzel</label><input name="short_code"></div></div><div class="row"><div><label>E-Mail</label><input name="email" type="email" required></div><div><label>Rolle</label><select name="role"><option value="user">User</option><option value="teamleader">Teamleiter</option><option value="admin">Admin</option></select></div></div><div><label>Passwort</label><input name="password" type="password" required></div><div class="notice" id="userCreateNotice"></div><button class="btn-secondary" type="submit">Benutzer anlegen</button></form></section>
       </div>
     </main>
   </section>
