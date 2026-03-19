@@ -1,4 +1,3 @@
-
 try { require('dotenv').config(); } catch (_err) {}
 const express = require('express');
 const path = require('path');
@@ -258,315 +257,340 @@ async function sendMail({ to, subject, text, html }) {
 }
 async function sendWeeklySummaries() { /* intentionally unchanged / optional */ }
 async function sendDueReminders() { /* intentionally unchanged / optional */ }
-function maybeStartCrons() { if (!getTransporter()) return; cron.schedule('0 7 * * *', () => sendDueReminders().catch(console.error)); cron.schedule('0 7 * * 1', () => sendWeeklySummaries().catch(console.error)); }
 
-app.get('/api/health', async (_req, res) => {
-  try { await pool.query('SELECT 1'); res.json({ ok: true, app: APP_NAME }); }
-  catch { res.status(500).json({ ok: false, error: 'DB nicht erreichbar' }); }
-});
+function mapCaseRow(r) {
+  return {
+    ...r,
+    repeat_case: !!r.repeat_case,
+    linked_internal_process: !!r.linked_internal_process,
+    closed: !!r.closed,
+  };
+}
+
+app.get('/api/health', (_req, res) => res.json({ ok: true, app: APP_NAME }));
 
 app.post('/api/login', async (req, res) => {
-  const { email, password } = req.body || {};
-  if (!email || !password) return res.status(400).json({ error: 'E-Mail und Passwort erforderlich.' });
-  const normalizedEmail = String(email).trim().toLowerCase();
-  const result = await pool.query('SELECT id, name, email, password_hash, role FROM users WHERE email = $1', [normalizedEmail]);
-  if (!result.rowCount) return res.status(401).json({ error: 'Login fehlgeschlagen.' });
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const password = String(req.body.password || '');
+  const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
   const user = result.rows[0];
-  const ok = await bcrypt.compare(String(password), user.password_hash);
+  if (!user) return res.status(401).json({ error: 'Login fehlgeschlagen.' });
+  const ok = await bcrypt.compare(password, user.password_hash);
   if (!ok) return res.status(401).json({ error: 'Login fehlgeschlagen.' });
+  await ensureNotificationRow(user.id);
   const token = signToken(user);
-  res.cookie('qm_token', token, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', maxAge: 7*24*60*60*1000 });
-  res.json({ id: user.id, name: user.name, email: user.email, role: user.role });
+  res.cookie('qm_token', token, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', maxAge: 7 * 24 * 3600 * 1000 });
+  res.json({ ok: true, user: { id: user.id, name: user.name, email: user.email, role: user.role, short_code: user.short_code } });
 });
-app.post('/api/logout', (_req, res) => { res.clearCookie('qm_token'); res.json({ ok: true }); });
+
+app.post('/api/logout', (_req, res) => {
+  res.clearCookie('qm_token');
+  res.json({ ok: true });
+});
+
 app.get('/api/me', authRequired, async (req, res) => {
-  await ensureNotificationRow(req.user.id);
-  const result = await pool.query('SELECT u.id, u.name, u.email, u.role, u.short_code, ns.* FROM users u LEFT JOIN notification_settings ns ON ns.user_id=u.id WHERE u.id=$1', [req.user.id]);
-  const row = result.rows[0];
-  res.json({ id: row.id, name: row.name, email: row.email, role: row.role, short_code: row.short_code, settings: row });
-});
-app.get('/api/debug/admin-status', async (_req, res) => {
-  const users = await pool.query('SELECT id, name, short_code, email, role, created_at FROM users ORDER BY id ASC');
-  res.json({ adminEmailEnv: ADMIN_EMAIL || null, hasAdminPasswordEnv: Boolean(ADMIN_PASSWORD), users: users.rows });
+  const r = await pool.query('SELECT id, name, email, role, short_code FROM users WHERE id = $1', [req.user.id]);
+  res.json({ user: r.rows[0] || null });
 });
 
 app.get('/api/users', authRequired, async (_req, res) => {
-  const result = await pool.query('SELECT id, name, short_code, email, role FROM users ORDER BY name ASC');
-  res.json(result.rows);
+  const r = await pool.query('SELECT id, name, email, role, short_code FROM users ORDER BY name ASC');
+  res.json(r.rows);
 });
+
 app.post('/api/users', authRequired, roleRequired('admin'), async (req, res) => {
-  const { name, short_code, email, password, role } = req.body || {};
-  if (!name || !email || !password) return res.status(400).json({ error: 'Name, E-Mail und Passwort sind erforderlich.' });
+  const name = String(req.body.name || '').trim();
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const password = String(req.body.password || '');
+  const shortCode = String(req.body.short_code || '').trim().toUpperCase() || null;
+  const role = ['user', 'teamleader', 'admin'].includes(req.body.role) ? req.body.role : 'user';
+  if (!name || !email || !password) return res.status(400).json({ error: 'Name, E-Mail und Passwort sind Pflicht.' });
   const hash = await bcrypt.hash(password, 12);
-  const safeRole = ['user', 'teamleader', 'admin'].includes(role) ? role : 'user';
   try {
-    const created = await pool.query(
-      `INSERT INTO users (name, short_code, email, password_hash, role)
-       VALUES ($1, $2, $3, $4, $5) RETURNING id, name, short_code, email, role`,
-      [name, short_code || null, String(email).toLowerCase(), hash, safeRole]
+    const r = await pool.query(
+      'INSERT INTO users (name, short_code, email, password_hash, role) VALUES ($1,$2,$3,$4,$5) RETURNING id, name, email, role, short_code',
+      [name, shortCode, email, hash, role]
     );
-    await ensureNotificationRow(created.rows[0].id);
-    res.status(201).json(created.rows[0]);
-  } catch (error) {
-    if (String(error.message).includes('duplicate')) return res.status(409).json({ error: 'E-Mail existiert bereits.' });
-    throw error;
+    await ensureNotificationRow(r.rows[0].id);
+    res.json(r.rows[0]);
+  } catch (err) {
+    res.status(400).json({ error: err.code === '23505' ? 'E-Mail existiert bereits.' : 'Benutzer konnte nicht erstellt werden.' });
   }
 });
 
-app.get('/api/settings', authRequired, async (req, res) => {
+app.get('/api/notification-settings', authRequired, async (req, res) => {
   await ensureNotificationRow(req.user.id);
-  const result = await pool.query('SELECT * FROM notification_settings WHERE user_id = $1', [req.user.id]);
-  res.json(result.rows[0]);
-});
-app.patch('/api/settings', authRequired, async (req, res) => {
-  const payload = {
-    notify_enabled: toBool(req.body?.notify_enabled, true),
-    notify_only_assigned: toBool(req.body?.notify_only_assigned, true),
-    notify_only_red: toBool(req.body?.notify_only_red, false),
-    notify_daily_digest: toBool(req.body?.notify_daily_digest, false),
-    email_enabled: toBool(req.body?.email_enabled, false),
-    email_new_case: toBool(req.body?.email_new_case, true),
-    email_escalation: toBool(req.body?.email_escalation, true),
-    email_due_reminder: toBool(req.body?.email_due_reminder, true),
-    weekly_summary: toBool(req.body?.weekly_summary, false),
-  };
-  const result = await pool.query(`
-    INSERT INTO notification_settings
-      (user_id, notify_enabled, notify_only_assigned, notify_only_red, notify_daily_digest, email_enabled, email_new_case, email_escalation, email_due_reminder, weekly_summary, updated_at)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())
-    ON CONFLICT (user_id) DO UPDATE SET
-      notify_enabled=EXCLUDED.notify_enabled,
-      notify_only_assigned=EXCLUDED.notify_only_assigned,
-      notify_only_red=EXCLUDED.notify_only_red,
-      notify_daily_digest=EXCLUDED.notify_daily_digest,
-      email_enabled=EXCLUDED.email_enabled,
-      email_new_case=EXCLUDED.email_new_case,
-      email_escalation=EXCLUDED.email_escalation,
-      email_due_reminder=EXCLUDED.email_due_reminder,
-      weekly_summary=EXCLUDED.weekly_summary,
-      updated_at=NOW()
-    RETURNING *`,
-    [req.user.id, payload.notify_enabled, payload.notify_only_assigned, payload.notify_only_red, payload.notify_daily_digest, payload.email_enabled, payload.email_new_case, payload.email_escalation, payload.email_due_reminder, payload.weekly_summary]
-  );
-  res.json(result.rows[0]);
+  const r = await pool.query('SELECT * FROM notification_settings WHERE user_id = $1', [req.user.id]);
+  res.json(r.rows[0]);
 });
 
-app.get('/api/categories', authRequired, (_req, res) => {
-  res.json({
-    customer: ['Ausführung Werkstatt', 'Geräusch / Fahrverhalten', 'Sauberkeit / Fahrzeugzustand', 'Kommunikation', 'Termin / Wartezeit', 'Rechnung / Leistung', 'Wiederholreparatur', 'Sonstiges'],
-    internal: ['AIR / Dialogannahme', 'Auftragsdokumentation', 'Leistungsbeschreibung unklar', 'Servicevorbereitung', 'Werkstattrückmeldung', 'Teileprozess', 'Endkontrolle / ND-Kontrolle', 'Terminierung / Disposition', 'Kommunikation intern', 'Sonstiges'],
-    escalation: ['niedrig', 'mittel', 'hoch', 'kritisch'],
-    validity: ['offen', 'ja', 'nein', 'teilweise'],
-  });
+app.put('/api/notification-settings', authRequired, async (req, res) => {
+  await ensureNotificationRow(req.user.id);
+  const body = req.body || {};
+  const vals = {
+    notify_enabled: toBool(body.notify_enabled, true),
+    notify_only_assigned: toBool(body.notify_only_assigned, true),
+    notify_only_red: toBool(body.notify_only_red, false),
+    notify_daily_digest: toBool(body.notify_daily_digest, false),
+    email_enabled: toBool(body.email_enabled, false),
+    email_new_case: toBool(body.email_new_case, true),
+    email_escalation: toBool(body.email_escalation, true),
+    email_due_reminder: toBool(body.email_due_reminder, true),
+    weekly_summary: toBool(body.weekly_summary, false),
+  };
+  const r = await pool.query(
+    `UPDATE notification_settings SET
+      notify_enabled=$1,
+      notify_only_assigned=$2,
+      notify_only_red=$3,
+      notify_daily_digest=$4,
+      email_enabled=$5,
+      email_new_case=$6,
+      email_escalation=$7,
+      email_due_reminder=$8,
+      weekly_summary=$9,
+      updated_at=NOW()
+     WHERE user_id=$10
+     RETURNING *`,
+    [
+      vals.notify_enabled,
+      vals.notify_only_assigned,
+      vals.notify_only_red,
+      vals.notify_daily_digest,
+      vals.email_enabled,
+      vals.email_new_case,
+      vals.email_escalation,
+      vals.email_due_reminder,
+      vals.weekly_summary,
+      req.user.id,
+    ]
+  );
+  res.json(r.rows[0]);
 });
 
 app.get('/api/cases', authRequired, async (req, res) => {
-  const { status, priority, type, mine } = req.query;
-  const params = [];
-  const where = [];
-  if (status && status !== 'all') { params.push(status); where.push(`c.status = $${params.length}`); }
-  if (priority && priority !== 'all') { params.push(priority); where.push(`c.priority = $${params.length}`); }
-  if (type && type !== 'all') { params.push(type); where.push(`c.case_type = $${params.length}`); }
-  if (mine === '1') { params.push(req.user.id); where.push(`c.assigned_user_id = $${params.length}`); }
-  const sql = `
-    SELECT c.*, creator.name AS created_by_name, creator.short_code AS created_by_short_code,
-      assignee.name AS assigned_user_name, assignee.short_code AS assigned_user_short_code,
-      COUNT(DISTINCT u.id)::int AS update_count,
-      COUNT(DISTINCT a.id)::int AS attachment_count
-    FROM cases c
-    JOIN users creator ON creator.id = c.created_by
-    LEFT JOIN users assignee ON assignee.id = c.assigned_user_id
-    LEFT JOIN case_updates u ON u.case_id = c.id
-    LEFT JOIN case_attachments a ON a.case_id = c.id
-    ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-    GROUP BY c.id, creator.name, creator.short_code, assignee.name, assignee.short_code
-    ORDER BY c.updated_at DESC, c.id DESC`;
-  const result = await pool.query(sql, params);
-  res.json(result.rows);
-});
-
-app.get('/api/cases/:id', authRequired, async (req, res) => {
-  const id = Number(req.params.id);
-  const caseRow = await getCaseById(id);
-  if (!caseRow) return res.status(404).json({ error: 'Fall nicht gefunden.' });
-  const updates = await pool.query(`SELECT cu.*, u.name AS user_name, u.short_code AS user_short_code FROM case_updates cu JOIN users u ON u.id = cu.user_id WHERE cu.case_id = $1 ORDER BY cu.created_at ASC, cu.id ASC`, [id]);
-  const attachments = await pool.query(`SELECT id, filename, mime_type, size_bytes, created_at FROM case_attachments WHERE case_id = $1 ORDER BY created_at ASC, id ASC`, [id]);
-  res.json({ ...caseRow, updates: updates.rows, attachments: attachments.rows });
+  const r = await pool.query(
+    `SELECT c.*, creator.name AS created_by_name, creator.short_code AS created_by_short_code,
+            assignee.name AS assigned_user_name, assignee.email AS assigned_user_email, assignee.short_code AS assigned_user_short_code,
+            closer.name AS closed_by_name, closer.short_code AS closed_by_short_code
+     FROM cases c
+     JOIN users creator ON creator.id = c.created_by
+     LEFT JOIN users assignee ON assignee.id = c.assigned_user_id
+     LEFT JOIN users closer ON closer.id = c.closed_by
+     ORDER BY c.created_at DESC, c.id DESC`
+  );
+  res.json(r.rows.map(mapCaseRow));
 });
 
 app.post('/api/cases', authRequired, async (req, res) => {
   const {
     case_type, title, description, priority, source_area, customer_name, vehicle, order_ref, due_date,
-    assigned_user_id, mechanic_code, internal_action, customer_action, category, repeat_case,
+    assigned_user_id, service_advisor, mechanic_code, internal_action, customer_action, category, repeat_case,
     cause_guess, complaint_validity, escalation_level, linked_internal_process,
   } = req.body || {};
-  if (!case_type || !title || !description) return res.status(400).json({ error: 'Falltyp, Titel und Beschreibung sind Pflichtfelder.' });
-  const created = await pool.query(
+
+  if (!case_type || !title || !description) {
+    return res.status(400).json({ error: 'Pflichtfelder fehlen.' });
+  }
+
+  const r = await pool.query(
     `INSERT INTO cases (
-      case_type, title, description, priority, source_area, customer_name, vehicle, order_ref, due_date,
-      assigned_user_id, created_by, updated_at, service_advisor, mechanic_code, internal_action, customer_action,
-      closed, category, repeat_case, cause_guess, complaint_validity, escalation_level, linked_internal_process
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW(),$12,$13,$14,FALSE,$15,$16,$17,$18,$19,$20) RETURNING *`,
-    [case_type, title, description, priority || 'gelb', source_area || null, customer_name || null, vehicle || null, order_ref || null,
-      due_date || null, assigned_user_id || null, req.user.id, service_advisor || null, mechanic_code || null, internal_action || null, customer_action || null,
-      category || null, toBool(repeat_case, false), cause_guess || null, complaint_validity || 'offen', escalation_level || 'mittel', toBool(linked_internal_process, false)]
+      case_type, title, description, status, priority, source_area, customer_name, vehicle, order_ref,
+      due_date, assigned_user_id, created_by, service_advisor, mechanic_code, internal_action, customer_action,
+      category, repeat_case, cause_guess, complaint_validity, escalation_level, linked_internal_process
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW(),$12,$13,$14,$15,FALSE,$16,$17,$18,$19,$20,$21) RETURNING *`,
+    [
+      case_type,
+      String(title).trim(),
+      String(description).trim(),
+      'neu',
+      priority || 'gelb',
+      source_area || null,
+      customer_name || null,
+      vehicle || null,
+      order_ref || null,
+      due_date || null,
+      assigned_user_id || null,
+      req.user.id,
+      service_advisor || null,
+      mechanic_code || null,
+      internal_action || null,
+      customer_action || null,
+      category || null,
+      toBool(repeat_case, false),
+      cause_guess || null,
+      complaint_validity || null,
+      escalation_level || null,
+      toBool(linked_internal_process, false),
+    ]
   );
-  await pool.query(`INSERT INTO case_updates (case_id, user_id, update_type, content) VALUES ($1, $2, 'system', $3)`, [created.rows[0].id, req.user.id, `Fall angelegt durch ${req.user.name}`]);
-  res.status(201).json(created.rows[0]);
+
+  res.json(mapCaseRow(r.rows[0]));
 });
 
-app.patch('/api/cases/:id', authRequired, async (req, res) => {
+app.put('/api/cases/:id', authRequired, async (req, res) => {
   const id = Number(req.params.id);
-  const payload = req.body || {};
-  const allowed = ['status','priority','assigned_user_id','due_date','source_area','service_advisor','mechanic_code','internal_action','customer_action','customer_name','vehicle','order_ref','title','description','category','cause_guess','complaint_validity','escalation_level'];
-  const keys = Object.keys(payload).filter((k) => allowed.includes(k));
-  const sets = [];
-  const params = [];
-  for (const key of keys) { params.push(payload[key] === '' ? null : payload[key]); sets.push(`${key} = $${params.length}`); }
-  if (Object.prototype.hasOwnProperty.call(payload, 'repeat_case')) { params.push(toBool(payload.repeat_case, false)); sets.push(`repeat_case = $${params.length}`); }
-  if (Object.prototype.hasOwnProperty.call(payload, 'linked_internal_process')) { params.push(toBool(payload.linked_internal_process, false)); sets.push(`linked_internal_process = $${params.length}`); }
-  if (Object.prototype.hasOwnProperty.call(payload, 'closed')) {
-    const closed = toBool(payload.closed, false);
-    params.push(closed); sets.push(`closed = $${params.length}`);
-    if (closed) { sets.push(`status = 'abgeschlossen'`); sets.push(`closed_at = NOW()`); params.push(req.user.id); sets.push(`closed_by = $${params.length}`); }
-    else { sets.push(`closed_at = NULL`); sets.push(`closed_by = NULL`); }
-  }
-  if (!sets.length) return res.status(400).json({ error: 'Keine gültigen Felder zur Aktualisierung.' });
-  params.push(id);
-  const result = await pool.query(`UPDATE cases SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $${params.length} RETURNING *`, params);
-  if (!result.rowCount) return res.status(404).json({ error: 'Fall nicht gefunden.' });
-  res.json(result.rows[0]);
+  const existing = await getCaseById(id);
+  if (!existing) return res.status(404).json({ error: 'Fall nicht gefunden.' });
+
+  const body = req.body || {};
+  const closed = body.closed === undefined ? existing.closed : toBool(body.closed, existing.closed);
+  const closed_at = closed ? (existing.closed_at || new Date()) : null;
+  const closed_by = closed ? req.user.id : null;
+
+  const r = await pool.query(
+    `UPDATE cases SET
+      case_type=$1,
+      title=$2,
+      description=$3,
+      status=$4,
+      priority=$5,
+      source_area=$6,
+      customer_name=$7,
+      vehicle=$8,
+      order_ref=$9,
+      service_advisor=$10,
+      mechanic_code=$11,
+      internal_action=$12,
+      customer_action=$13,
+      due_date=$14,
+      assigned_user_id=$15,
+      closed=$16,
+      closed_at=$17,
+      closed_by=$18,
+      category=$19,
+      repeat_case=$20,
+      cause_guess=$21,
+      complaint_validity=$22,
+      escalation_level=$23,
+      linked_internal_process=$24,
+      updated_at=NOW()
+     WHERE id=$25
+     RETURNING *`,
+    [
+      body.case_type || existing.case_type,
+      body.title ?? existing.title,
+      body.description ?? existing.description,
+      body.status || existing.status,
+      body.priority || existing.priority,
+      body.source_area ?? existing.source_area,
+      body.customer_name ?? existing.customer_name,
+      body.vehicle ?? existing.vehicle,
+      body.order_ref ?? existing.order_ref,
+      body.service_advisor ?? existing.service_advisor,
+      body.mechanic_code ?? existing.mechanic_code,
+      body.internal_action ?? existing.internal_action,
+      body.customer_action ?? existing.customer_action,
+      body.due_date ?? existing.due_date,
+      body.assigned_user_id ?? existing.assigned_user_id,
+      closed,
+      closed_at,
+      closed_by,
+      body.category ?? existing.category,
+      body.repeat_case === undefined ? existing.repeat_case : toBool(body.repeat_case, existing.repeat_case),
+      body.cause_guess ?? existing.cause_guess,
+      body.complaint_validity ?? existing.complaint_validity,
+      body.escalation_level ?? existing.escalation_level,
+      body.linked_internal_process === undefined ? existing.linked_internal_process : toBool(body.linked_internal_process, existing.linked_internal_process),
+      id,
+    ]
+  );
+
+  res.json(mapCaseRow(r.rows[0]));
 });
 
 app.post('/api/cases/:id/updates', authRequired, async (req, res) => {
-  const id = Number(req.params.id);
-  const { content, update_type } = req.body || {};
-  if (!content) return res.status(400).json({ error: 'Inhalt erforderlich.' });
-  const exists = await pool.query('SELECT id FROM cases WHERE id=$1', [id]);
-  if (!exists.rowCount) return res.status(404).json({ error: 'Fall nicht gefunden.' });
-  const created = await pool.query(`INSERT INTO case_updates (case_id, user_id, update_type, content) VALUES ($1,$2,$3,$4) RETURNING *`, [id, req.user.id, update_type || 'note', content]);
-  await pool.query('UPDATE cases SET updated_at = NOW() WHERE id=$1', [id]);
-  res.status(201).json(created.rows[0]);
-});
-
-app.post('/api/cases/:id/attachments', authRequired, upload.array('images', 6), async (req, res) => {
-  const id = Number(req.params.id);
-  const exists = await pool.query('SELECT id FROM cases WHERE id=$1', [id]);
-  if (!exists.rowCount) return res.status(404).json({ error: 'Fall nicht gefunden.' });
-  const files = req.files || [];
-  if (!files.length) return res.status(400).json({ error: 'Keine Bilder ausgewählt.' });
-  const saved = [];
-  for (const file of files) {
-    const base64 = file.buffer.toString('base64');
-    const inserted = await pool.query(
-      `INSERT INTO case_attachments (case_id, uploaded_by, filename, mime_type, size_bytes, data_base64)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, filename, mime_type, size_bytes, created_at`,
-      [id, req.user.id, file.originalname, file.mimetype, file.size, base64]
-    );
-    saved.push(inserted.rows[0]);
-  }
-  await pool.query('UPDATE cases SET updated_at = NOW() WHERE id=$1', [id]);
-  res.status(201).json(saved);
-});
-
-app.get('/api/attachments/:id', authRequired, async (req, res) => {
-  const result = await pool.query('SELECT filename, mime_type, data_base64 FROM case_attachments WHERE id=$1', [Number(req.params.id)]);
-  if (!result.rowCount) return res.status(404).send('Nicht gefunden');
-  const row = result.rows[0];
-  res.setHeader('Content-Type', row.mime_type);
-  res.setHeader('Content-Disposition', `inline; filename="${row.filename}"`);
-  res.send(Buffer.from(row.data_base64, 'base64'));
-});
-
-
-async function fetchAnalyticsData(){
-  const rows = (await pool.query(`
-    SELECT c.id, c.case_type, c.priority, c.status, c.source_area, c.service_advisor, c.mechanic_code, c.category, c.repeat_case, c.complaint_validity,
-           c.escalation_level, c.linked_internal_process, c.closed, c.created_at, c.closed_at, c.due_date
-    FROM cases c
-    ORDER BY c.created_at ASC`)).rows;
-  const analytics = {
-    totals: { all: rows.length, complaints: 0, internal: 0, open: 0, closed: 0, repeat: 0, overdue: 0 },
-    byMonth: {}, byQuarter: {},
-    byArea: { customer_complaint: {}, internal_process: {} },
-    byCategory: { customer_complaint: {}, internal_process: {} },
-    byMechanic: {}, byServiceAdvisor: {}, linked: {}, validity: {}, escalation: {},
-  };
-  const today = todayLocalISO();
-  for (const r of rows) {
-    analytics.totals[r.case_type === 'customer_complaint' ? 'complaints' : 'internal'] += 1;
-    if (r.status !== 'abgeschlossen' && !r.closed) analytics.totals.open += 1; else analytics.totals.closed += 1;
-    if (r.repeat_case) analytics.totals.repeat += 1;
-    if (r.due_date && r.due_date < today && !r.closed) analytics.totals.overdue += 1;
-    const month = String(r.created_at).slice(0,7);
-    const quarter = quarterFromDateString(r.created_at);
-    analytics.byMonth[month] ||= { complaints: 0, internal: 0 };
-    analytics.byMonth[month][r.case_type === 'customer_complaint' ? 'complaints' : 'internal'] += 1;
-    analytics.byQuarter[quarter] ||= { complaints: 0, internal: 0 };
-    analytics.byQuarter[quarter][r.case_type === 'customer_complaint' ? 'complaints' : 'internal'] += 1;
-    const areaBucket = analytics.byArea[r.case_type]; areaBucket[r.source_area || 'Unbekannt'] = (areaBucket[r.source_area || 'Unbekannt'] || 0) + 1;
-    const catBucket = analytics.byCategory[r.case_type]; catBucket[r.category || 'Unkategorisiert'] = (catBucket[r.category || 'Unkategorisiert'] || 0) + 1;
-    const mech = r.mechanic_code || '—'; analytics.byMechanic[mech] ||= { all: 0, complaints: 0, internal: 0, open: 0, closed: 0 }; analytics.byMechanic[mech].all += 1; analytics.byMechanic[mech][r.case_type === 'customer_complaint' ? 'complaints' : 'internal'] += 1; analytics.byMechanic[mech][r.closed ? 'closed' : 'open'] += 1;
-    const sb = r.service_advisor || '—'; analytics.byServiceAdvisor[sb] ||= { all: 0, complaints: 0, internal: 0, open: 0, closed: 0 }; analytics.byServiceAdvisor[sb].all += 1; analytics.byServiceAdvisor[sb][r.case_type === 'customer_complaint' ? 'complaints' : 'internal'] += 1; analytics.byServiceAdvisor[sb][r.closed ? 'closed' : 'open'] += 1;
-    analytics.linked[r.linked_internal_process ? 'mit Bezug' : 'ohne Bezug'] = (analytics.linked[r.linked_internal_process ? 'mit Bezug' : 'ohne Bezug'] || 0) + 1;
-    analytics.validity[r.complaint_validity || 'offen'] = (analytics.validity[r.complaint_validity || 'offen'] || 0) + 1;
-    analytics.escalation[r.escalation_level || 'mittel'] = (analytics.escalation[r.escalation_level || 'mittel'] || 0) + 1;
-  }
-  return analytics;
-}
-
-app.get('/api/analytics', authRequired, roleRequired('teamleader', 'admin'), async (_req, res) => {
-  res.json(await fetchAnalyticsData());
-});
-
-app.get('/api/analytics/export', authRequired, roleRequired('teamleader', 'admin'), async (_req, res) => {
-  const rows = (await pool.query(`SELECT id, case_type, title, source_area, service_advisor, mechanic_code, category, priority, status, repeat_case, complaint_validity, escalation_level, linked_internal_process, created_at, closed_at FROM cases ORDER BY created_at DESC`)).rows;
-  const header = ['ID','Typ','Titel','Bereich','SB','Mechaniker','Kategorie','Priorität','Status','Wiederholfall','Berechtigt','Eskalation','Bezug interner Prozessfehler','Erstellt am','Abgeschlossen am'];
-  const csv = [header.join(';')].concat(rows.map(r => [r.id, r.case_type, r.title, r.source_area || '', r.service_advisor || '', r.mechanic_code || '', r.category || '', r.priority, r.status, r.repeat_case ? 'ja' : 'nein', r.complaint_validity || '', r.escalation_level || '', r.linked_internal_process ? 'ja' : 'nein', new Date(r.created_at).toLocaleString('de-DE'), r.closed_at ? new Date(r.closed_at).toLocaleString('de-DE') : ''].map(v => '"'+String(v).replaceAll('"','""')+'"').join(';'))).join('\n');
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', 'attachment; filename="qm-monitor-auswertung.csv"');
-  res.send('\ufeff' + csv);
-});
-
-
-app.get('/api/analytics/report.pdf', authRequired, roleRequired('teamleader', 'admin'), async (_req, res) => {
-  const rows = (await pool.query(`SELECT id, case_type, title, source_area, service_advisor, mechanic_code, category, priority, status, repeat_case, complaint_validity, escalation_level, linked_internal_process, created_at, closed_at FROM cases ORDER BY created_at DESC`)).rows;
-  const analytics = await fetchAnalyticsData();
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', 'attachment; filename="qm-monitor-auswertung.pdf"');
-  const doc = new PDFDocument({ margin: 40, size: 'A4' });
-  doc.pipe(res);
-  const line = (label, value='—') => { doc.font('Helvetica-Bold').text(label + ': ', { continued: true }); doc.font('Helvetica').text(String(value)); };
-  const section = (title) => { doc.moveDown(); doc.fontSize(15).font('Helvetica-Bold').text(title); doc.moveDown(0.4); doc.fontSize(10).font('Helvetica'); };
-  doc.fontSize(22).font('Helvetica-Bold').text('QM Monitor Auswertung');
-  doc.fontSize(10).font('Helvetica').fillColor('#475569').text(`Erstellt am ${new Date().toLocaleString('de-DE')}`).fillColor('black');
-  section('Übersicht');
-  line('Reklamationen', analytics.totals.complaints); line('Interne Prozessfehler', analytics.totals.internal); line('Wiederholfälle', analytics.totals.repeat); line('Überfällige Fälle', analytics.totals.overdue);
-  section('Monate');
-  Object.entries(analytics.byMonth).forEach(([k,v])=> line(k, `Reklamationen ${v.complaints} | Prozessfehler ${v.internal}`));
-  section('Quartale');
-  Object.entries(analytics.byQuarter).forEach(([k,v])=> line(k, `Reklamationen ${v.complaints} | Prozessfehler ${v.internal}`));
-  section('Bereiche Reklamationen'); Object.entries(analytics.byArea.customer_complaint).forEach(([k,v])=> line(k,v));
-  section('Bereiche Prozessfehler'); Object.entries(analytics.byArea.internal_process).forEach(([k,v])=> line(k,v));
-  section('Mechaniker'); Object.entries(analytics.byMechanic).forEach(([k,v])=> line(k, `R ${v.complaints} | P ${v.internal} | offen ${v.open} | abgeschlossen ${v.closed}`));
-  section('Serviceberater'); Object.entries(analytics.byServiceAdvisor).forEach(([k,v])=> line(k, `R ${v.complaints} | P ${v.internal} | offen ${v.open} | abgeschlossen ${v.closed}`));
-  section('Qualitätsindikatoren'); Object.entries(analytics.validity).forEach(([k,v])=> line(`Berechtigt ${k}`, v)); Object.entries(analytics.escalation).forEach(([k,v])=> line(`Eskalation ${k}`, v)); Object.entries(analytics.linked).forEach(([k,v])=> line(`Bezug ${k}`, v));
-  section('Aktuelle Fälle');
-  rows.slice(0, 25).forEach((r)=> { if (doc.y > 760) doc.addPage(); doc.font('Helvetica-Bold').text(`#${r.id} ${r.title}`); doc.font('Helvetica').text(`${r.case_type === 'customer_complaint' ? 'Kundenreklamation' : 'Interner Prozessfehler'} | Bereich ${r.source_area || '—'} | SB ${r.service_advisor || '—'} | Mechaniker ${r.mechanic_code || '—'} | Prio ${r.priority} | Status ${r.status}`); doc.moveDown(0.3); });
-  doc.end();
-});
-
-app.post('/api/admin/send-weekly-summary-now', authRequired, roleRequired('admin'), async (_req, res) => {
-  await sendWeeklySummaries();
+  const caseId = Number(req.params.id);
+  const content = String(req.body.content || '').trim();
+  const updateType = String(req.body.update_type || 'note').trim();
+  if (!content) return res.status(400).json({ error: 'Inhalt fehlt.' });
+  await pool.query('INSERT INTO case_updates (case_id, user_id, update_type, content) VALUES ($1,$2,$3,$4)', [caseId, req.user.id, updateType, content]);
   res.json({ ok: true });
 });
 
-app.get('*', (_req, res) => { res.sendFile(path.join(__dirname, 'public', 'index.html')); });
-
-initDb().then(() => {
-  maybeStartCrons();
-  app.listen(PORT, () => console.log(`${APP_NAME} läuft auf Port ${PORT}`));
-}).catch((error) => {
-  console.error('Fehler beim Initialisieren:', error);
-  process.exit(1);
+app.get('/api/cases/:id/updates', authRequired, async (req, res) => {
+  const caseId = Number(req.params.id);
+  const r = await pool.query(
+    `SELECT u.*, usr.name AS user_name, usr.short_code AS user_short_code
+     FROM case_updates u
+     JOIN users usr ON usr.id = u.user_id
+     WHERE u.case_id = $1
+     ORDER BY u.created_at DESC, u.id DESC`,
+    [caseId]
+  );
+  res.json(r.rows);
 });
+
+app.post('/api/cases/:id/attachments', authRequired, upload.array('files', 6), async (req, res) => {
+  const caseId = Number(req.params.id);
+  const files = req.files || [];
+  for (const file of files) {
+    await pool.query(
+      `INSERT INTO case_attachments (case_id, uploaded_by, filename, mime_type, size_bytes, data_base64)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [caseId, req.user.id, file.originalname, file.mimetype, file.size, file.buffer.toString('base64')]
+    );
+  }
+  res.json({ ok: true, count: files.length });
+});
+
+app.get('/api/cases/:id/attachments', authRequired, async (req, res) => {
+  const caseId = Number(req.params.id);
+  const r = await pool.query('SELECT id, filename, mime_type, size_bytes, created_at FROM case_attachments WHERE case_id=$1 ORDER BY created_at DESC, id DESC', [caseId]);
+  res.json(r.rows);
+});
+
+app.get('/api/attachments/:id', authRequired, async (req, res) => {
+  const id = Number(req.params.id);
+  const r = await pool.query('SELECT * FROM case_attachments WHERE id=$1', [id]);
+  const file = r.rows[0];
+  if (!file) return res.status(404).send('Nicht gefunden');
+  res.setHeader('Content-Type', file.mime_type);
+  res.setHeader('Content-Disposition', `inline; filename="${file.filename.replace(/"/g, '')}"`);
+  res.send(Buffer.from(file.data_base64, 'base64'));
+});
+
+app.get('/api/export/cases.pdf', authRequired, async (_req, res) => {
+  const r = await pool.query('SELECT * FROM cases ORDER BY created_at DESC, id DESC');
+  const rows = r.rows.map(mapCaseRow);
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="qm-monitor-faelle-${todayLocalISO()}.pdf"`);
+
+  const doc = new PDFDocument({ size: 'A4', margin: 40 });
+  doc.pipe(res);
+  doc.fontSize(20).text(APP_NAME, { continued: false });
+  doc.moveDown(0.2);
+  doc.fontSize(11).text(`Fallübersicht vom ${todayLocalISO()}`);
+  doc.moveDown();
+
+  rows.forEach((c, idx) => {
+    doc.fontSize(13).text(`#${c.id} · ${c.title}`);
+    doc.fontSize(10)
+      .text(`Typ: ${c.case_type} | Status: ${c.status} | Priorität: ${c.priority}`)
+      .text(`Bereich: ${c.source_area || '-'} | Kategorie: ${c.category || '-'} | Fällig: ${c.due_date || '-'}`)
+      .text(`SB: ${c.service_advisor || '-'} | Mechaniker: ${c.mechanic_code || '-'} | Zugewiesen: ${c.assigned_user_id || '-'}`)
+      .text(`Beschreibung: ${c.description || '-'}`);
+    if (c.internal_action) doc.text(`Interne Maßnahme: ${c.internal_action}`);
+    if (c.customer_action) doc.text(`Kundenmaßnahme: ${c.customer_action}`);
+    if (idx < rows.length - 1) doc.moveDown().moveTo(40, doc.y).lineTo(555, doc.y).stroke().moveDown();
+  });
+
+  doc.end();
+});
+
+app.get('*', (req, res) => {
+  if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'API-Route nicht gefunden.' });
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+initDb()
+  .then(() => {
+    cron.schedule('0 7 * * *', () => { sendDueReminders().catch(() => {}); });
+    cron.schedule('30 7 * * 1', () => { sendWeeklySummaries().catch(() => {}); });
+    app.listen(PORT, () => console.log(`${APP_NAME} läuft auf Port ${PORT}`));
+  })
+  .catch((err) => {
+    console.error('Fehler beim Initialisieren:', err);
+    process.exit(1);
+  });
